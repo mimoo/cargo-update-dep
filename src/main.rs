@@ -170,6 +170,7 @@ fn update_manifest_path(
         let mut file = File::create(manifest_path).expect("Failed to update manifest file");
         file.write_all(lines.join("\n").as_bytes())
             .expect("Failed to write to file");
+        file.write_all(b"\n").expect("Failed to write to file");
     }
 
     //
@@ -177,18 +178,20 @@ fn update_manifest_path(
 }
 
 fn update_cargo_lock(root_dir: &Path, package: &str, version: &str, new_version: &str) {
-    let command = format!(
-        "update -p {}:{} --precise {}",
-        package, version, new_version
-    );
-    println!("{}", command);
+    let pkgid = format!("{}:{}", package, version);
     // run `cargo metadata`
     let output = Command::new("cargo")
         .current_dir(root_dir)
-        .arg(&command)
+        .args(&["update", "-p"])
+        .arg(pkgid)
+        .arg("--precise")
+        .arg(new_version)
         .output()
         .expect("failed to execute process");
-    assert!(output.status.success());
+    println!("{:?}", String::from_utf8(output.stdout));
+    println!("{:?}", String::from_utf8(output.stderr));
+    //    assert!(output.status.success());
+    // this last command might fail if the user is running something in parallel to update the Cargo.lock
 }
 
 #[cfg(test)]
