@@ -86,7 +86,7 @@ fn run(root_dir: &Path, package: &str, version: &str, new_version: &str) {
     }
 
     // 3. update Cargo.lock with `cargo update`
-    update_cargo_lock(root_dir, package, version, new_version);
+    update_cargo_lock(root_dir, package, version);
 
     // 4. print out files changed
     let output = Output {
@@ -179,15 +179,13 @@ fn update_manifest_path(
     updated
 }
 
-fn update_cargo_lock(root_dir: &Path, package: &str, version: &str, new_version: &str) {
+fn update_cargo_lock(root_dir: &Path, package: &str, version: &str) {
     let pkgid = format!("{}:{}", package, version);
     // run `cargo metadata`
     let _output = Command::new("cargo")
         .current_dir(root_dir)
         .args(&["update", "-p"])
         .arg(pkgid)
-        .arg("--precise")
-        .arg(new_version)
         .output()
         .expect("failed to execute process");
     //    assert!(output.status.success());
