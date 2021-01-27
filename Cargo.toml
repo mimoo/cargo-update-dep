@@ -1,6 +1,7 @@
 [package]
 name = "cargo-update-dep"
 version = "0.1.0"
+description = "CLI to upgrade rust dependencies in cargo.toml and cargo.lock files"
 authors = ["David Wong <davidwg@calibra.com>"]
 edition = "2018"
 license = "MIT OR Apache-2.0"
