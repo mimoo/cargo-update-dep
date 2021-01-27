@@ -1,7 +1,7 @@
 use clap::{App, Arg};
 use regex::Regex;
 use std::fs::File;
-use std::io::{prelude::*, BufReader, LineWriter};
+use std::io::{prelude::*, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -70,23 +70,25 @@ fn main() {
         })
         .unwrap_or_else(|| std::env::current_dir().expect("Failed to open current dir"));
 
+    run(&root_dir, package, version, new_version);
+}
+
+fn run(root_dir: &Path, package: &str, version: &str, new_version: &str) {
     // 1. fetch all Cargo.toml file via `cargo metadata | jq '.workspace_members'`
-    let manifest_files = get_manifest_files(&root_dir);
-    println!("manifest_files: {:?}", manifest_files);
+    let manifest_files = get_manifest_files(root_dir);
 
     // 2. update them, potentially + keep track of which ones were updated
     let mut updated = vec![];
     for manifest_file in manifest_files {
         if update_manifest_path(Path::new(&manifest_file), package, version, new_version) {
-            println!("{:?} updated", manifest_file);
             updated.push(manifest_file);
         }
     }
 
     // 3. update Cargo.lock with `cargo update`
-    update_cargo_lock(&root_dir, package, version, new_version);
+    update_cargo_lock(root_dir, package, version, new_version);
 
-    // 4...
+    // 4. print out files changed
     let output = Output {
         updated_manifests: updated,
     };
@@ -180,7 +182,7 @@ fn update_manifest_path(
 fn update_cargo_lock(root_dir: &Path, package: &str, version: &str, new_version: &str) {
     let pkgid = format!("{}:{}", package, version);
     // run `cargo metadata`
-    let output = Command::new("cargo")
+    let _output = Command::new("cargo")
         .current_dir(root_dir)
         .args(&["update", "-p"])
         .arg(pkgid)
@@ -188,8 +190,6 @@ fn update_cargo_lock(root_dir: &Path, package: &str, version: &str, new_version:
         .arg(new_version)
         .output()
         .expect("failed to execute process");
-    println!("{:?}", String::from_utf8(output.stdout));
-    println!("{:?}", String::from_utf8(output.stderr));
     //    assert!(output.status.success());
     // this last command might fail if the user is running something in parallel to update the Cargo.lock
 }
@@ -197,42 +197,32 @@ fn update_cargo_lock(root_dir: &Path, package: &str, version: &str, new_version:
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
 
     #[test]
-    fn test_regex() {
-        let package = "thing";
-        let version = "0.1.1";
-        let new_version = "3.4.5";
+    fn test_everything() {
+        // first copy our Cargo.toml so we don't rewrite it
+        let mut src = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        src.push("resources/test");
+        let dst = tempfile::tempdir().unwrap().into_path();
+        fs::copy(
+            src.as_path().join("Cargo.toml"),
+            dst.as_path().join("Cargo.toml"),
+        )
+        .unwrap();
+        fs::create_dir(dst.as_path().join("src")).unwrap();
+        fs::File::create(dst.as_path().join("src/lib.rs")).unwrap();
 
-        // find `PACKAGE =` or `package = "PACKAGE"`
-        let re = Regex::new(r"(?P<y>\d{4})-(?P<m>\d{2})-(?P<d>\d{2})").unwrap();
+        // run on that Cargo.toml
+        run(&dst, "serde", "1.0.122", "1.0.123");
+        run(&dst, "serde_json", "1.0.60", "1.0.61");
+        run(&dst, "regex", "0.1.77", "1.4.3");
+        run(&dst, "lazy_static", "0.2.11", "1.4.0");
 
-        // PACKAGE = "VERSION"
-        let re1 = format!(r#"{}[\t\s]*=[\t\s]*"({})""#, package, version);
+        // check that it worked
+        let result = fs::read_to_string(dst.as_path().join("Cargo.toml")).unwrap();
+        let expected = fs::read_to_string(src.as_path().join("Cargo.toml.new")).unwrap();
 
-        // PACKAGE = { version = "VERSION" }
-        let re1_variant = format!(
-            r#"{}[\t\s]*=.*version[\t\s]*=[\t\s]*"({})""#,
-            package, version
-        );
-
-        // a = { package = "PACKAGE", version = "VERSION"}
-        let re2 = format!(
-            r#"package[\t\s]*=[\t\s]*"{}".*version[\t\s]*=[\t\s]*"({})""#,
-            package, version
-        );
-
-        // a = { version = "VERSION", package = "PACKAGE"}
-        let re2_variant = format!(
-            r#"version[\t\s]*=[\t\s]*"({})".*package[\t\s]*=[\t\s]*"{}"#,
-            version, package
-        );
-
-        let after = Regex::new(&re1)
-            .unwrap()
-            .replace(r#"thing = "0.1.1" "#, |caps: &regex::Captures| {
-                format!("{} {}", &caps[0], &caps[0])
-            });
-        println!("{}", after);
+        assert!(result == expected);
     }
 }
